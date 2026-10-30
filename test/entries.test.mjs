@@ -29,6 +29,14 @@ test("a manifest without a valid id or name is no entry", () => {
   assert.equal(entryOfManifest({ owner: "x", repo: "y", stars: 0, pushedAt: null }, { id: "abc" }), null);
 });
 
+test("creator (Kino Social's own handle) rides along when it is one, left off otherwise", () => {
+  const of = (creator) => entryOfManifest({ owner: "x", repo: "y", stars: 0, pushedAt: null }, { id: "abc", name: "Abc", creator }).creator;
+  assert.equal(of("lordmacu"), "lordmacu");
+  assert.equal(of("  lordmacu  "), "lordmacu");
+  assert.equal(of(undefined), undefined);
+  for (const bad of ["", "ab", "a".repeat(21), "with space", "con-guion", 42, null, ["lordmacu"]]) assert.equal(of(bad), undefined, JSON.stringify(bad));
+});
+
 test("catalog entries are recommended, with their hints", () => {
   const out = entriesOfCatalog({ schema: 1, plugins: [
     { id: "own", repo: "kinotvapp/kino-plugin-own-server", name: "Tu servidor", needsSetup: true, signed: true, authorKey: "c".repeat(64), requires: ["x"], legacyDefault: true },

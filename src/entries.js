@@ -9,6 +9,8 @@ export const CATEGORIES = ["movies", "series", "anime", "live", "radio", "subtit
 const ID = /^[a-z0-9][a-z0-9-]{1,39}$/;
 const REPO = /^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}$/;
 const KEY_HEX = /^[0-9a-f]{64}$/;
+// Kino Social's own handle shape (`_check_handle` on the backend): letters, digits, underscore, 3 to 20 characters.
+const KINO_SOCIAL_USER = /^[A-Za-z0-9_]{3,20}$/;
 const RAW = "https://raw.githubusercontent.com";
 
 const strings = (v) => (Array.isArray(v) ? v.filter((s) => typeof s === "string") : []);
@@ -68,6 +70,11 @@ export function entryOfManifest(repo, m) {
   if (Number.isFinite(updatedAt)) e.updatedAt = updatedAt;
   if (m.signature) e.signed = true;
   if (authorKey) e.authorKey = authorKey;
+  // Kino itself never reads this (not in contract.json's entryFields, so a plugin-run store could never make it stick):
+  // it rides along in index.json only for Kino Social to read, attributing the plugin to its author's own profile there
+  // (CREATOR-PROFILE-SPEC.md §1a). A malformed value is just left off, never a reason to drop the whole entry.
+  const creator = typeof m.creator === "string" && KINO_SOCIAL_USER.test(m.creator.trim()) ? m.creator.trim() : undefined;
+  if (creator) e.creator = creator;
   return e;
 }
 

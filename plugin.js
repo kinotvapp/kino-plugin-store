@@ -288,7 +288,7 @@ var catalog_default = {
 };
 
 // index.json
-var kino_plugins_store_default = {
+var kino_plugin_store_default = {
   schema: 1,
   generatedAt: 1793296449481,
   entries: [
@@ -1959,6 +1959,7 @@ var CATEGORIES = ["movies", "series", "anime", "live", "radio", "subtitles", "ut
 var ID = /^[a-z0-9][a-z0-9-]{1,39}$/;
 var REPO = /^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}$/;
 var KEY_HEX = /^[0-9a-f]{64}$/;
+var KINO_SOCIAL_USER = /^[A-Za-z0-9_]{3,20}$/;
 var RAW = "https://raw.githubusercontent.com";
 var strings = (v) => Array.isArray(v) ? v.filter((s) => typeof s === "string") : [];
 var text = (v) => typeof v === "string" && v.trim() ? v.trim() : void 0;
@@ -2002,6 +2003,8 @@ function entryOfManifest(repo, m) {
   if (Number.isFinite(updatedAt)) e.updatedAt = updatedAt;
   if (m.signature) e.signed = true;
   if (authorKey) e.authorKey = authorKey;
+  const creator = typeof m.creator === "string" && KINO_SOCIAL_USER.test(m.creator.trim()) ? m.creator.trim() : void 0;
+  if (creator) e.creator = creator;
   return e;
 }
 function entriesOfCatalog(catalog) {
@@ -2176,7 +2179,7 @@ async function sync(arg, deps) {
 
 // src/plugin.js
 async function storeSync(arg) {
-  return sync(arg, { fetch: (url, options) => kino.fetch(url, options), now: () => Date.now(), shipped: { index: kino_plugins_store_default, catalog: catalog_default } });
+  return sync(arg, { fetch: (url, options) => kino.fetch(url, options), now: () => Date.now(), shipped: { index: kino_plugin_store_default, catalog: catalog_default } });
 }
 export {
   storeSync
