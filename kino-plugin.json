@@ -1,0 +1,25 @@
+{
+  "id": "kino-plugins",
+  "name": "Kino Plugins",
+  "version": "1.0.2",
+  "apiVersion": 15,
+  "entry": "plugin.js",
+  "description": "La tienda de Kino: los plugins recomendados y los de la comunidad en GitHub",
+  "author": "kinotvapp",
+  "hosts": [
+    "api.github.com",
+    "raw.githubusercontent.com",
+    "cdn.jsdelivr.net",
+    "archive.org"
+  ],
+  "capabilities": [
+    "pluginStore"
+  ],
+  "pluginStore": {
+    "mode": "local"
+  },
+  "signature": {
+    "authorKey": "82b87b938e0a95b142467c815a8823cb54310a13a828c3c4c77b1eda43294ae6",
+    "value": "3626f3205805a93a337f44645a3dae47ea0403e9ae612bebf418ebe16562eecff51b9952f61ed9ebd357ee24f2155fe9792ce301b866d780fb9316dbc1742f09"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "kino-plugin-store",
+  "private": true,
+  "type": "module",
+  "description": "Kino Plugins, Kino's built-in plugin store: its source lives in src/, and `npm run build` bundles it (with the shipped index.json and catalog.json) into plugin.js.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check:built": "node scripts/build.mjs --check",
+    "test": "node --test test/sync.test.mjs && node --test test/entries.test.mjs && node --test test/build-index.test.mjs",
+    "validate": "node sdk/validate.mjs ."
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.0"
+  }
+}
