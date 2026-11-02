@@ -288,7 +288,7 @@ var catalog_default = {
 };
 
 // index.json
-var kino_plugin_store_default = {
+var store_fix_default = {
   schema: 1,
   generatedAt: 1793296449481,
   entries: [
@@ -1955,7 +1955,9 @@ function stremioName(id) {
 }
 
 // src/entries.js
-var CATEGORIES = ["movies", "series", "anime", "live", "radio", "subtitles", "utilities", "adult"];
+var CATEGORIES = ["movies", "series", "anime", "live", "radio", "subtitles", "utilities", "themes", "adult"];
+var CATEGORY_ID = /^[a-z][a-z0-9-]{1,23}$/;
+var isCategory = (c) => CATEGORIES.includes(c) || CATEGORY_ID.test(c);
 var ID = /^[a-z0-9][a-z0-9-]{1,39}$/;
 var REPO = /^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}$/;
 var KEY_HEX = /^[0-9a-f]{64}$/;
@@ -1965,7 +1967,7 @@ var strings = (v) => Array.isArray(v) ? v.filter((s) => typeof s === "string") :
 var text = (v) => typeof v === "string" && v.trim() ? v.trim() : void 0;
 var keyOf = (address) => String(address).toLowerCase();
 function categoriesOfManifest(m) {
-  const own = strings(m.categories).map((c) => c.trim()).filter((c) => CATEGORIES.includes(c));
+  const own = strings(m.categories).map((c) => c.trim()).filter(isCategory);
   let out;
   if (own.length > 0) {
     out = [...new Set(own)];
@@ -1979,6 +1981,7 @@ function categoriesOfManifest(m) {
     if (caps.has("channels")) out.push("live");
     if ((caps.has("tracking") || caps.has("segments")) && !out.includes("utilities")) out.push("utilities");
   }
+  if (Array.isArray(m.appThemes) && m.appThemes.length > 0 && !out.includes("themes")) out.push("themes");
   if (m.screen && m.screen.adult === true && !out.includes("adult")) out.push("adult");
   return out;
 }
@@ -2023,7 +2026,7 @@ function entriesOfCatalog(catalog) {
     if (text(p.description)) e.description = text(p.description);
     const tags = strings(p.tags);
     if (tags.length) e.tags = tags;
-    const categories = strings(p.categories).filter((c) => CATEGORIES.includes(c));
+    const categories = strings(p.categories).map((c) => c.trim()).filter(isCategory);
     if (categories.length) e.categories = [...new Set(categories)];
     e.recommended = true;
     if (p.needsSetup === true) e.needsSetup = true;
@@ -2064,6 +2067,7 @@ function mergeFull(indexEntries, recommended) {
 
 // src/sync.js
 var DAY_MS = 24 * 36e5;
+var INDEX_EVERY_MS = 36e5;
 var OVERLAP_MS = 10 * 6e4;
 var MAX_MANIFESTS = 30;
 var PARALLEL = 4;
@@ -2167,7 +2171,7 @@ async function sync(arg, deps) {
   const state = arg && arg.state && typeof arg.state === "object" ? arg.state : null;
   if (!state || !Number.isFinite(state.indexGeneratedAt)) return full(shipped.index, shipped.catalog, 0, null);
   const at = now();
-  if (!(at - (state.indexReadAt || 0) < DAY_MS)) {
+  if (!(at - (state.indexReadAt || 0) < INDEX_EVERY_MS)) {
     const index = await firstJson(fetch, INDEX_URLS, INDEX_MAX_BYTES, validIndex);
     if (index) {
       const catalog = await firstJson(fetch, CATALOG_URLS, CATALOG_MAX_BYTES, validCatalog) ?? shipped.catalog;
@@ -2179,7 +2183,7 @@ async function sync(arg, deps) {
 
 // src/plugin.js
 async function storeSync(arg) {
-  return sync(arg, { fetch: (url, options) => kino.fetch(url, options), now: () => Date.now(), shipped: { index: kino_plugin_store_default, catalog: catalog_default } });
+  return sync(arg, { fetch: (url, options) => kino.fetch(url, options), now: () => Date.now(), shipped: { index: store_fix_default, catalog: catalog_default } });
 }
 export {
   storeSync
