@@ -19,7 +19,7 @@ build again.
 ```text
 src/
   plugin.js     entry: the storeSync export Kino calls, with kino.fetch, the clock and the shipped lists
-  sync.js       storeSync: shipped list, daily index.json, or a pushed:> delta with its cursor in state
+  sync.js       storeSync: shipped list, hourly index.json, or a pushed:> delta with its cursor in state
   entries.js    StoreEntry objects from a kino-plugin.json, from catalog.json and from index.json; categories as Kino derives them
   stremio-names.js  the names of the recommended Stremio addons catalog.json leaves unnamed (as their manifests give them)
 index.json      the list shipped with this version: { "schema": 1, "generatedAt": <ms>, "entries": [StoreEntry...] }
@@ -30,7 +30,7 @@ catalog.json    Kino's curated catalog (the same file as the app's assets/plugin
 
 1. **First call** (no `state` yet): the shipped `index.json` and `catalog.json`, `full: true`, with no network at all, so the
    store is full on a first start offline. Catalog entries are marked `recommended` (Kino honours that only from this store).
-2. **Once a day**: today's `index.json` from `kinotvapp/kino-plugins` (raw.githubusercontent.com, then jsDelivr), built daily
+2. **Once an hour**: the latest `index.json` from `kinotvapp/kino-plugins` (raw.githubusercontent.com, then jsDelivr), built hourly
    by a GitHub Action, plus `catalog.json`; `full: true`. That re-read drops repos that lost the `kino-plugin` topic or were
    deleted, and refreshes the stars. If it cannot be read, the sync falls back to the delta and tries again next time.
 3. **Between index days**: one search,
