@@ -7,11 +7,19 @@ import { categoriesOfManifest, entriesOfCatalog, entryOfManifest } from "../src/
 const shipped = (name) => JSON.parse(readFileSync(new URL(`../${name}`, import.meta.url), "utf8"));
 
 test("categories mirror Kino's: the manifest's own, else a guess from its capabilities", () => {
-  assert.deepEqual(categoriesOfManifest({ categories: ["anime", "nope", "anime", "adult"], capabilities: ["channels"] }), ["anime", "adult"]);
+  assert.deepEqual(categoriesOfManifest({ categories: ["anime", "No pe!", "anime", "adult"], capabilities: ["channels"] }), ["anime", "adult"]);
   assert.deepEqual(categoriesOfManifest({ capabilities: ["search", "resolve", "episodes", "channels"] }), ["movies", "series", "live"]);
   assert.deepEqual(categoriesOfManifest({ catalogOnly: true, capabilities: ["meta", "resolve", "search"] }), ["utilities"]);
   assert.deepEqual(categoriesOfManifest({ capabilities: ["tracking"] }), ["utilities"]);
   assert.deepEqual(categoriesOfManifest({ capabilities: ["subtitles"] }), []);
+});
+
+test("categories are open, like Kino's: a new id of the right shape is kept, a theme plugin is filed under themes", () => {
+  assert.deepEqual(categoriesOfManifest({ categories: ["manga", "audio-books", "x", "9lives"], capabilities: [] }), ["manga", "audio-books"]);
+  assert.deepEqual(categoriesOfManifest({ categories: ["themes"], capabilities: ["screen"], appThemes: [{ id: "a" }] }), ["themes"]);
+  assert.deepEqual(categoriesOfManifest({ capabilities: ["screen"], appThemes: [{ id: "a" }] }), ["themes"]);
+  assert.deepEqual(categoriesOfManifest({ categories: ["utilities"], capabilities: ["screen"], appThemes: [{ id: "a" }] }), ["utilities", "themes"]);
+  assert.deepEqual(categoriesOfManifest({ capabilities: ["screen"], appThemes: [] }), []);
 });
 
 test("an 18+ screen makes the entry adult, so the 18+ gate sees it", () => {
