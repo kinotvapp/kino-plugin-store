@@ -4,7 +4,11 @@
 import { stremioName } from "./stremio-names.js";
 
 /** MarketCategory ids, in Kino's order. */
-export const CATEGORIES = ["movies", "series", "anime", "live", "radio", "subtitles", "utilities", "adult"];
+export const CATEGORIES = ["movies", "series", "anime", "live", "radio", "subtitles", "utilities", "themes", "adult"];
+
+/** What a new category id looks like (Kino's `MarketCategory.ID_PATTERN`): the type is open, so "manga" or "audio-books" is a category too. */
+const CATEGORY_ID = /^[a-z][a-z0-9-]{1,23}$/;
+const isCategory = (c) => CATEGORIES.includes(c) || CATEGORY_ID.test(c);
 
 const ID = /^[a-z0-9][a-z0-9-]{1,39}$/;
 const REPO = /^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}$/;
@@ -25,7 +29,7 @@ export const keyOf = (address) => String(address).toLowerCase();
  * 18+ gate hides the entry while the code is locked.
  */
 export function categoriesOfManifest(m) {
-  const own = strings(m.categories).map((c) => c.trim()).filter((c) => CATEGORIES.includes(c));
+  const own = strings(m.categories).map((c) => c.trim()).filter(isCategory);
   let out;
   if (own.length > 0) {
     out = [...new Set(own)];
@@ -39,6 +43,7 @@ export function categoriesOfManifest(m) {
     if (caps.has("channels")) out.push("live");
     if ((caps.has("tracking") || caps.has("segments")) && !out.includes("utilities")) out.push("utilities");
   }
+  if (Array.isArray(m.appThemes) && m.appThemes.length > 0 && !out.includes("themes")) out.push("themes");
   if (m.screen && m.screen.adult === true && !out.includes("adult")) out.push("adult");
   return out;
 }
@@ -96,7 +101,7 @@ export function entriesOfCatalog(catalog) {
     if (text(p.description)) e.description = text(p.description);
     const tags = strings(p.tags);
     if (tags.length) e.tags = tags;
-    const categories = strings(p.categories).filter((c) => CATEGORIES.includes(c));
+    const categories = strings(p.categories).map((c) => c.trim()).filter(isCategory);
     if (categories.length) e.categories = [...new Set(categories)];
     e.recommended = true;
     if (p.needsSetup === true) e.needsSetup = true;
