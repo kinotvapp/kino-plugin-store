@@ -1,7 +1,7 @@
 // Kino Plugins' storeSync (Plugin stores spec §3). Three ways to answer, cheapest first:
 //   1. The very first call: the copies shipped inside the plugin (index.json + catalog.json), full, with no network, so the
 //      store is full on a first launch with no connection.
-//   2. Once a day: today's index.json (built daily by a GitHub Action in kinotvapp/kino-plugins) and catalog.json, full.
+//   2. Every hour: the latest index.json (built hourly by a GitHub Action in kinotvapp/kino-plugins) and catalog.json, full.
 //      That re-read is what drops a repo that lost the topic or was deleted, and refreshes the stars.
 //   3. Between index days: one GitHub search for repos pushed since the last sync (minus a 10-minute overlap), then each new
 //      repo's kino-plugin.json from raw.githubusercontent.com, as a delta. The window lives in `state` (the delta cursor):
@@ -12,6 +12,9 @@
 import { STORE_ID, entriesOfCatalog, entryOfManifest, keyOf, mergeFull, recommendedIds, recommendedKeys } from "./entries.js";
 
 export const DAY_MS = 24 * 3600_000;
+
+/** How long the index read stays fresh: the index is built every hour, so a device reads it again after this long. */
+export const INDEX_EVERY_MS = 3600_000;
 export const OVERLAP_MS = 10 * 60_000;
 /** Manifests read in one delta, newest pushes first: with the search and a failed index read, inside the run's 40 requests. */
 export const MAX_MANIFESTS = 30;
@@ -132,7 +135,7 @@ async function delta(fetch, state, since, at) {
   const url = `${SEARCH_URL}?q=${encodeURIComponent(q)}&sort=updated&order=asc&per_page=100`;
   const { body } = await getJson(fetch, url, INDEX_MAX_BYTES, { Accept: "application/vnd.github+json" });
   if (!body || !Array.isArray(body.items)) return { full: false, entries: [], state: kept };
-  // A recommended repo keeps the row the catalog gave it (its words, its "recommended"): the daily index refreshes it.
+  // A recommended repo keeps the row the catalog gave it (its words, its "recommended"): the hourly index refreshes it.
   const recommended = new Set(Array.isArray(state.recommended) ? state.recommended : []);
   const found = body.items
     .filter((it) => it && it.fork !== true && it.owner && typeof it.owner.login === "string" && typeof it.name === "string")
@@ -163,7 +166,7 @@ export async function sync(arg, deps) {
   const state = arg && arg.state && typeof arg.state === "object" ? arg.state : null;
   if (!state || !Number.isFinite(state.indexGeneratedAt)) return full(shipped.index, shipped.catalog, 0, null);
   const at = now();
-  if (!(at - (state.indexReadAt || 0) < DAY_MS)) {
+  if (!(at - (state.indexReadAt || 0) < INDEX_EVERY_MS)) {
     const index = await firstJson(fetch, INDEX_URLS, INDEX_MAX_BYTES, validIndex);
     if (index) {
       const catalog = (await firstJson(fetch, CATALOG_URLS, CATALOG_MAX_BYTES, validCatalog)) ?? shipped.catalog;
