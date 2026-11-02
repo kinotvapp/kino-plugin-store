@@ -49,7 +49,7 @@ const CDN_INDEX = "https://cdn.jsdelivr.net/gh/kinotvapp/kino-plugins@main/index
 const RAW_CATALOG = "https://raw.githubusercontent.com/kinotvapp/kino-plugins/main/catalog.json";
 const SEARCH = "https://api.github.com/search/repositories";
 
-const synced = (now) => ({ indexGeneratedAt: T0, indexReadAt: now - 3 * 3600_000, recommended: ["kinotvapp/kino-plugin-archive"] });
+const synced = (now) => ({ indexGeneratedAt: T0, indexReadAt: now - 20 * 60_000, recommended: ["kinotvapp/kino-plugin-archive"] });
 
 test("first sync is the shipped list, full", async () => {
   const { fetch, calls } = fakeFetch({});
@@ -148,7 +148,7 @@ test("a 403 leaves the window to the next sync", async () => {
   const refused = fakeFetch({ [SEARCH]: { status: 403, body: {} } });
   const first = await sync({ reason: "schedule", since, state: synced(now) }, { fetch: refused.fetch, now: () => now, shipped });
   // Kino counts the empty answer as a sync and moves `since` on; the store's cursor still names the refused window.
-  const later = now + 2 * 3600_000;
+  const later = now + 30 * 60_000; // within the hour the index stays fresh: still a delta
   const ok = fakeFetch({ [SEARCH]: { body: { items: [] } } });
   const second = await sync({ reason: "schedule", since: now, state: first.state }, { fetch: ok.fetch, now: () => later, shipped });
   const q = new URL(ok.calls[0]).searchParams.get("q");
