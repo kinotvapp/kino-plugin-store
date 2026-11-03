@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { readFileSync } from "node:fs";
 
-import { DAY_MS, MAX_MANIFESTS, OVERLAP_MS, sync } from "../src/sync.js";
+import { BUDGET_MS, DAY_MS, MAX_MANIFESTS, OVERLAP_MS, sync } from "../src/sync.js";
 
 const T0 = Date.UTC(2026, 9, 29, 3, 0, 0);
 
@@ -246,4 +246,24 @@ test("a delta never brings a repo that reuses a recommended id, or the store's o
   assert.deepEqual(first.state.recommendedIds, ["internet-archive", "subs-addon"]);
   const r = await sync({ reason: "reload", since: now - 3600_000, state: { ...synced(now), recommendedIds: first.state.recommendedIds } }, { fetch, now: () => now, shipped });
   assert.deepEqual(r.entries.map((e) => e.id), ["fine"]);
+});
+
+test("a network where raw hangs but the search answers stops inside the time budget and keeps the window", async () => {
+  const now0 = T0 + 3 * DAY_MS;
+  let clock = now0;
+  const items = Array.from({ length: 30 }, (_, i) => ({ name: `r${i}`, fork: false, owner: { login: `u${i}` }, stargazers_count: 1, pushed_at: new Date(now0 - 60_000).toISOString() }));
+  let manifestCalls = 0;
+  const fetch = async (url, options = {}) => {
+    if (url.startsWith(SEARCH)) return { ok: true, status: 200, headers: {}, json: () => ({ total_count: 30, items }) };
+    // raw and the CDN hang until the request's own timeout, then fail.
+    if (url.includes("/kino-plugin.json")) manifestCalls++;
+    clock += options.timeoutMs;
+    throw new Error("timeout");
+  };
+  const state = { indexGeneratedAt: T0, indexReadAt: now0 - 2 * 3600_000, recommended: [], deltaFrom: now0 - 3600_000 };
+  const r = await sync({ reason: "schedule", since: now0 - 3600_000, state }, { fetch, now: () => clock, shipped });
+  assert.ok(clock - now0 <= BUDGET_MS + 1000, `took ${(clock - now0) / 1000} s of the ${BUDGET_MS / 1000} s budget`);
+  assert.ok(manifestCalls < MAX_MANIFESTS, "not every manifest was tried");
+  assert.equal(r.full, false);
+  assert.equal(r.state.deltaFrom, now0 - 3600_000, "the window did not move past repos that were not read");
 });

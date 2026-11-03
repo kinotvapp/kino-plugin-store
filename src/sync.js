@@ -20,6 +20,14 @@ export const OVERLAP_MS = 10 * 60_000;
 export const MAX_MANIFESTS = 30;
 const PARALLEL = 4;
 const TIMEOUT_MS = 15_000;
+/**
+ * The whole run's time budget, under Kino's 60 s limit for a storeSync call. Without it a network where raw.githubusercontent.com
+ * hangs but api.github.com answers waits 15 s for each of the 30 manifests (~160 s) and Kino cuts the call by time, which
+ * repeated switches the plugin off ("No responde"). Past the budget no request is started: the run answers what it has.
+ */
+export const BUDGET_MS = 40_000;
+/** A request is not started with less than this left of the budget. */
+const MIN_LEFT_MS = 2_000;
 
 const INDEX_URLS = [
   "https://raw.githubusercontent.com/kinotvapp/kino-plugins/main/index.json",
@@ -124,7 +132,7 @@ const pushedMs = (r) => {
  * The repos pushed after the window of [state] as a delta, oldest push first, at most [MAX_MANIFESTS] manifests. [since]: Kino's
  * last successful sync, [at]: now. A refused or failed search answers an empty delta whose state still names that window.
  */
-async function delta(fetch, state, since, at) {
+async function delta(fetch, state, since, at, outOfBudget) {
   const { deltaFrom, deltaAfter, ...rest } = state;
   const from = windowStart(state, since);
   // Refused (403/429) or failed: the same window next time. Before any window was kept, Kino's `since` is pinned now, because
@@ -152,9 +160,12 @@ async function delta(fetch, state, since, at) {
   const pageCut = Number.isFinite(body.total_count) && body.total_count > body.items.length;
   const last = (readCut ? repos : found).reduce((max, r) => Math.max(max, pushedMs(r)), 0);
   const cursor = (readCut || pageCut) && last - 1000 > from ? { deltaAfter: last - 1000 } : { deltaFrom: at };
+  // The budget ran out while reading manifests: some repos were not read, so the window stays where it was (the repeats
+  // that were read are dropped by Kino's upsert) instead of moving past them.
+  const stateOut = outOfBudget() ? kept : { ...rest, ...cursor };
   // A repo that reuses a recommended id (or the store's own) is an impostor: never in the list, whatever the next index says.
   const taken = new Set([STORE_ID, ...(Array.isArray(state.recommendedIds) ? state.recommendedIds : [])]);
-  return { full: false, entries: entries.filter((e) => e && !taken.has(e.id)), state: { ...rest, ...cursor } };
+  return { full: false, entries: entries.filter((e) => e && !taken.has(e.id)), state: stateOut };
 }
 
 /**
@@ -162,10 +173,18 @@ async function delta(fetch, state, since, at) {
  * the `{ index, catalog }` copies bundled into the plugin.
  */
 export async function sync(arg, deps) {
-  const { fetch, now, shipped } = deps;
+  const { now, shipped } = deps;
   const state = arg && arg.state && typeof arg.state === "object" ? arg.state : null;
   if (!state || !Number.isFinite(state.indexGeneratedAt)) return full(shipped.index, shipped.catalog, 0, null);
   const at = now();
+  const deadline = at + BUDGET_MS;
+  const fetch = (url, options) => {
+    const left = deadline - now();
+    // Out of budget: no request, which getJson reads as a failed one.
+    if (left < MIN_LEFT_MS) return Promise.resolve(null);
+    return deps.fetch(url, { ...options, timeoutMs: Math.min(options.timeoutMs ?? TIMEOUT_MS, left) });
+  };
+  const outOfBudget = () => deadline - now() < MIN_LEFT_MS;
   if (!(at - (state.indexReadAt || 0) < INDEX_EVERY_MS)) {
     const index = await firstJson(fetch, INDEX_URLS, INDEX_MAX_BYTES, validIndex);
     if (index) {
@@ -173,5 +192,5 @@ export async function sync(arg, deps) {
       return full(index, catalog, at, state);
     }
   }
-  return delta(fetch, state, Number.isFinite(arg.since) ? arg.since : 0, at);
+  return delta(fetch, state, Number.isFinite(arg.since) ? arg.since : 0, at, outOfBudget);
 }

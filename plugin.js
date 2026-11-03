@@ -288,7 +288,7 @@ var catalog_default = {
 };
 
 // index.json
-var store_fix_default = {
+var store_review_default = {
   schema: 1,
   generatedAt: 1793296449481,
   entries: [
@@ -2072,6 +2072,8 @@ var OVERLAP_MS = 10 * 6e4;
 var MAX_MANIFESTS = 30;
 var PARALLEL = 4;
 var TIMEOUT_MS = 15e3;
+var BUDGET_MS = 4e4;
+var MIN_LEFT_MS = 2e3;
 var INDEX_URLS = [
   "https://raw.githubusercontent.com/kinotvapp/kino-plugins/main/index.json",
   "https://cdn.jsdelivr.net/gh/kinotvapp/kino-plugins@main/index.json"
@@ -2143,7 +2145,7 @@ var pushedMs = (r) => {
   const t = r.pushedAt ? Date.parse(r.pushedAt) : NaN;
   return Number.isFinite(t) ? t : 0;
 };
-async function delta(fetch, state, since, at) {
+async function delta(fetch, state, since, at, outOfBudget) {
   const { deltaFrom, deltaAfter, ...rest } = state;
   const from = windowStart(state, since);
   const kept = { ...rest, ...Number.isFinite(deltaAfter) ? { deltaAfter } : { deltaFrom: Number.isFinite(deltaFrom) ? deltaFrom : since } };
@@ -2163,14 +2165,22 @@ async function delta(fetch, state, since, at) {
   const pageCut = Number.isFinite(body.total_count) && body.total_count > body.items.length;
   const last = (readCut ? repos : found).reduce((max, r) => Math.max(max, pushedMs(r)), 0);
   const cursor = (readCut || pageCut) && last - 1e3 > from ? { deltaAfter: last - 1e3 } : { deltaFrom: at };
+  const stateOut = outOfBudget() ? kept : { ...rest, ...cursor };
   const taken = /* @__PURE__ */ new Set([STORE_ID, ...Array.isArray(state.recommendedIds) ? state.recommendedIds : []]);
-  return { full: false, entries: entries.filter((e) => e && !taken.has(e.id)), state: { ...rest, ...cursor } };
+  return { full: false, entries: entries.filter((e) => e && !taken.has(e.id)), state: stateOut };
 }
 async function sync(arg, deps) {
-  const { fetch, now, shipped } = deps;
+  const { now, shipped } = deps;
   const state = arg && arg.state && typeof arg.state === "object" ? arg.state : null;
   if (!state || !Number.isFinite(state.indexGeneratedAt)) return full(shipped.index, shipped.catalog, 0, null);
   const at = now();
+  const deadline = at + BUDGET_MS;
+  const fetch = (url, options) => {
+    const left = deadline - now();
+    if (left < MIN_LEFT_MS) return Promise.resolve(null);
+    return deps.fetch(url, { ...options, timeoutMs: Math.min(options.timeoutMs ?? TIMEOUT_MS, left) });
+  };
+  const outOfBudget = () => deadline - now() < MIN_LEFT_MS;
   if (!(at - (state.indexReadAt || 0) < INDEX_EVERY_MS)) {
     const index = await firstJson(fetch, INDEX_URLS, INDEX_MAX_BYTES, validIndex);
     if (index) {
@@ -2178,12 +2188,12 @@ async function sync(arg, deps) {
       return full(index, catalog, at, state);
     }
   }
-  return delta(fetch, state, Number.isFinite(arg.since) ? arg.since : 0, at);
+  return delta(fetch, state, Number.isFinite(arg.since) ? arg.since : 0, at, outOfBudget);
 }
 
 // src/plugin.js
 async function storeSync(arg) {
-  return sync(arg, { fetch: (url, options) => kino.fetch(url, options), now: () => Date.now(), shipped: { index: store_fix_default, catalog: catalog_default } });
+  return sync(arg, { fetch: (url, options) => kino.fetch(url, options), now: () => Date.now(), shipped: { index: store_review_default, catalog: catalog_default } });
 }
 export {
   storeSync
