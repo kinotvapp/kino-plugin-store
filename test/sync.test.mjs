@@ -82,6 +82,20 @@ test("a day later it is today's index, full", async () => {
   assert.ok(!calls.some((u) => u.startsWith(SEARCH)), "no search on an index day");
 });
 
+test("a reload reads the latest index even when it was read minutes ago; a scheduled sync does not", async () => {
+  const now = T0 + 5 * 3600_000;
+  const fresh = { schema: 1, generatedAt: T0 + 4 * 3600_000, entries: [{ address: "kinotvapp/kino-plugin-mega-catalogo", id: "mega-catalogo", name: "Mega Catálogo", categories: ["movies"], popularity: 0 }] };
+  const routes = { [RAW_INDEX]: { body: fresh }, [RAW_CATALOG]: { body: { schema: 1, plugins: [] } }, [SEARCH]: { body: { items: [] } } };
+  const reload = fakeFetch(routes);
+  const r = await sync({ reason: "reload", since: now - 60_000, state: synced(now) }, { fetch: reload.fetch, now: () => now, shipped });
+  assert.equal(r.full, true, "the person asked for the latest list");
+  assert.ok(r.entries.some((e) => e.id === "mega-catalogo"));
+  const scheduled = fakeFetch(routes);
+  const s2 = await sync({ reason: "schedule", since: now - 60_000, state: synced(now) }, { fetch: scheduled.fetch, now: () => now, shipped });
+  assert.equal(s2.full, false, "the hour still spaces the scheduled syncs");
+  assert.ok(!scheduled.calls.includes(RAW_INDEX));
+});
+
 test("after a full read the next search starts at the index's own generatedAt: a repo pushed before the read is not lost", async () => {
   // The index was built at T0 + 1 h and read at T0 + 7 h (the hourly build can lag for hours); a repo pushed at T0 + 3 h is in
   // neither the index nor a search that starts at the read time.

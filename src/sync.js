@@ -181,7 +181,10 @@ export async function sync(arg, deps) {
     return deps.fetch(url, { ...options, timeoutMs: Math.min(options.timeoutMs ?? TIMEOUT_MS, left) });
   };
   const outOfBudget = () => deadline - now() < MIN_LEFT_MS;
-  if (!(at - (state.indexReadAt || 0) < INDEX_EVERY_MS)) {
+  // A reload is the person asking for the latest list: it always reads the index, whatever the hour says (the hour only
+  // spaces the scheduled syncs).
+  const asked = arg && arg.reason === "reload";
+  if (asked || !(at - (state.indexReadAt || 0) < INDEX_EVERY_MS)) {
     const index = await firstJson(fetch, INDEX_URLS, INDEX_MAX_BYTES, validIndex);
     if (index) {
       const catalog = (await firstJson(fetch, CATALOG_URLS, CATALOG_MAX_BYTES, validCatalog)) ?? shipped.catalog;
