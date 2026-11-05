@@ -107,6 +107,16 @@
       "authorKey": "82b87b938e0a95b142467c815a8823cb54310a13a828c3c4c77b1eda43294ae6"
     },
     {
+      "id": "sync-gdrive",
+      "repo": "kinotvapp/kino-plugin-sync-gdrive",
+      "name": "Kino Sync",
+      "description": "Sincroniza tus aparatos de Kino con tu propio Google Drive: la copia va cifrada y te conectas con un código. Experimental. No oficial: sin relación con Google.",
+      "tags": ["sincronización", "google drive"],
+      "needsSetup": true,
+      "categories": ["utilities"],
+      "requires": ["syncProvider", "screen"]
+    },
+    {
       "id": "news",
       "repo": "kinotvapp/kino-plugin-news",
       "name": "Solo noticias",
@@ -125,6 +135,33 @@
       "categories": ["utilities"],
       "requires": ["playerPanelTab", "room", "qrScan", "playerControl"],
       "authorKey": "82b87b938e0a95b142467c815a8823cb54310a13a828c3c4c77b1eda43294ae6"
+    },
+    {
+      "id": "tu-mes",
+      "repo": "kinotvapp/kino-plugin-tu-mes",
+      "name": "Tu mes en Kino",
+      "description": "Tu mes en Kino: horas vistas, rachas, cuándo ves, una tarjeta para compartir y qué ver después. En el celular y en la TV. Con tu permiso, usa la IA de Kino (Kilo).",
+      "tags": ["estadísticas", "resumen", "mes"],
+      "categories": ["utilities"],
+      "requires": ["screen", "library", "schedule", "shared", "ai"]
+    },
+    {
+      "id": "lyrics-lrclib",
+      "repo": "kinotvapp/kino-plugin-lyrics-lrclib",
+      "name": "Letras de LRCLIB",
+      "description": "Letras de canciones, sincronizadas o en texto, en el reproductor de música de Kino, desde LRCLIB, una base de datos abierta. No oficial: sin relación con LRCLIB.",
+      "tags": ["letras", "música"],
+      "categories": ["utilities"],
+      "requires": ["lyrics"]
+    },
+    {
+      "id": "lyrics-ytmusic",
+      "repo": "kinotvapp/kino-plugin-lyrics-ytmusic",
+      "name": "Letras de YouTube Music",
+      "description": "Letras de canciones en texto en el reproductor de música de Kino, desde YouTube Music. No oficial: sin relación con YouTube ni Google.",
+      "tags": ["letras", "música"],
+      "categories": ["utilities"],
+      "requires": ["lyrics"]
     },
     {
       "id": "opensubtitles-v3",

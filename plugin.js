@@ -110,6 +110,16 @@ var catalog_default = {
       authorKey: "82b87b938e0a95b142467c815a8823cb54310a13a828c3c4c77b1eda43294ae6"
     },
     {
+      id: "sync-gdrive",
+      repo: "kinotvapp/kino-plugin-sync-gdrive",
+      name: "Kino Sync",
+      description: "Sincroniza tus aparatos de Kino con tu propio Google Drive: la copia va cifrada y te conectas con un código. Experimental. No oficial: sin relación con Google.",
+      tags: ["sincronización", "google drive"],
+      needsSetup: true,
+      categories: ["utilities"],
+      requires: ["syncProvider", "screen"]
+    },
+    {
       id: "news",
       repo: "kinotvapp/kino-plugin-news",
       name: "Solo noticias",
@@ -128,6 +138,33 @@ var catalog_default = {
       categories: ["utilities"],
       requires: ["playerPanelTab", "room", "qrScan", "playerControl"],
       authorKey: "82b87b938e0a95b142467c815a8823cb54310a13a828c3c4c77b1eda43294ae6"
+    },
+    {
+      id: "tu-mes",
+      repo: "kinotvapp/kino-plugin-tu-mes",
+      name: "Tu mes en Kino",
+      description: "Tu mes en Kino: horas vistas, rachas, cuándo ves, una tarjeta para compartir y qué ver después. En el celular y en la TV. Con tu permiso, usa la IA de Kino (Kilo).",
+      tags: ["estadísticas", "resumen", "mes"],
+      categories: ["utilities"],
+      requires: ["screen", "library", "schedule", "shared", "ai"]
+    },
+    {
+      id: "lyrics-lrclib",
+      repo: "kinotvapp/kino-plugin-lyrics-lrclib",
+      name: "Letras de LRCLIB",
+      description: "Letras de canciones, sincronizadas o en texto, en el reproductor de música de Kino, desde LRCLIB, una base de datos abierta. No oficial: sin relación con LRCLIB.",
+      tags: ["letras", "música"],
+      categories: ["utilities"],
+      requires: ["lyrics"]
+    },
+    {
+      id: "lyrics-ytmusic",
+      repo: "kinotvapp/kino-plugin-lyrics-ytmusic",
+      name: "Letras de YouTube Music",
+      description: "Letras de canciones en texto en el reproductor de música de Kino, desde YouTube Music. No oficial: sin relación con YouTube ni Google.",
+      tags: ["letras", "música"],
+      categories: ["utilities"],
+      requires: ["lyrics"]
     },
     {
       id: "opensubtitles-v3",
@@ -288,7 +325,7 @@ var catalog_default = {
 };
 
 // index.json
-var store_review_default = {
+var kino_plugins_store_default = {
   schema: 1,
   generatedAt: 1793296449481,
   entries: [
@@ -2105,11 +2142,7 @@ async function firstJson(fetch, urls, maxBytes, valid) {
 }
 var validIndex = (b) => b && b.schema === 1 && Number.isFinite(b.generatedAt) && Array.isArray(b.entries);
 var validCatalog = (b) => b && b.schema === 1 && Array.isArray(b.plugins);
-var cursorOf = (state) => ({
-  ...state && Number.isFinite(state.deltaFrom) ? { deltaFrom: state.deltaFrom } : {},
-  ...state && Number.isFinite(state.deltaAfter) ? { deltaAfter: state.deltaAfter } : {}
-});
-function full(index, catalog, readAt, previous) {
+function full(index, catalog, readAt) {
   const recommended = entriesOfCatalog(catalog);
   return {
     full: true,
@@ -2119,7 +2152,7 @@ function full(index, catalog, readAt, previous) {
       indexReadAt: readAt,
       recommended: recommendedKeys(recommended),
       recommendedIds: recommendedIds(recommended),
-      ...cursorOf(previous)
+      deltaFrom: index.generatedAt
     }
   };
 }
@@ -2172,7 +2205,7 @@ async function delta(fetch, state, since, at, outOfBudget) {
 async function sync(arg, deps) {
   const { now, shipped } = deps;
   const state = arg && arg.state && typeof arg.state === "object" ? arg.state : null;
-  if (!state || !Number.isFinite(state.indexGeneratedAt)) return full(shipped.index, shipped.catalog, 0, null);
+  if (!state || !Number.isFinite(state.indexGeneratedAt)) return full(shipped.index, shipped.catalog, 0);
   const at = now();
   const deadline = at + BUDGET_MS;
   const fetch = (url, options) => {
@@ -2185,7 +2218,7 @@ async function sync(arg, deps) {
     const index = await firstJson(fetch, INDEX_URLS, INDEX_MAX_BYTES, validIndex);
     if (index) {
       const catalog = await firstJson(fetch, CATALOG_URLS, CATALOG_MAX_BYTES, validCatalog) ?? shipped.catalog;
-      return full(index, catalog, at, state);
+      return full(index, catalog, at);
     }
   }
   return delta(fetch, state, Number.isFinite(arg.since) ? arg.since : 0, at, outOfBudget);
@@ -2193,7 +2226,7 @@ async function sync(arg, deps) {
 
 // src/plugin.js
 async function storeSync(arg) {
-  return sync(arg, { fetch: (url, options) => kino.fetch(url, options), now: () => Date.now(), shipped: { index: store_review_default, catalog: catalog_default } });
+  return sync(arg, { fetch: (url, options) => kino.fetch(url, options), now: () => Date.now(), shipped: { index: kino_plugins_store_default, catalog: catalog_default } });
 }
 export {
   storeSync

@@ -67,17 +67,13 @@ async function firstJson(fetch, urls, maxBytes, valid) {
 const validIndex = (b) => b && b.schema === 1 && Number.isFinite(b.generatedAt) && Array.isArray(b.entries);
 const validCatalog = (b) => b && b.schema === 1 && Array.isArray(b.plugins);
 
-/** The delta cursor of [state]: the fields that say where the next search window starts (see [windowStart]). */
-const cursorOf = (state) => ({
-  ...(state && Number.isFinite(state.deltaFrom) ? { deltaFrom: state.deltaFrom } : {}),
-  ...(state && Number.isFinite(state.deltaAfter) ? { deltaAfter: state.deltaAfter } : {}),
-});
-
 /**
- * A full answer from [index] and [catalog]; [readAt]: when the index was downloaded (0 for the shipped copy). The delta cursor
- * of [previous] is kept: the window never starts before the new index anyway ([windowStart]).
+ * A full answer from [index] and [catalog]; [readAt]: when the index was downloaded (0 for the shipped copy). The list is
+ * replaced whole, so the delta cursor restarts at the index's own `generatedAt`: a repo pushed after the index was built but
+ * before it was read is in neither, and the next searches must find it (a cursor at the read time, or at an older delta, missed it
+ * until the next hourly index).
  */
-function full(index, catalog, readAt, previous) {
+function full(index, catalog, readAt) {
   const recommended = entriesOfCatalog(catalog);
   return {
     full: true,
@@ -87,7 +83,7 @@ function full(index, catalog, readAt, previous) {
       indexReadAt: readAt,
       recommended: recommendedKeys(recommended),
       recommendedIds: recommendedIds(recommended),
-      ...cursorOf(previous),
+      deltaFrom: index.generatedAt,
     },
   };
 }
@@ -175,7 +171,7 @@ async function delta(fetch, state, since, at, outOfBudget) {
 export async function sync(arg, deps) {
   const { now, shipped } = deps;
   const state = arg && arg.state && typeof arg.state === "object" ? arg.state : null;
-  if (!state || !Number.isFinite(state.indexGeneratedAt)) return full(shipped.index, shipped.catalog, 0, null);
+  if (!state || !Number.isFinite(state.indexGeneratedAt)) return full(shipped.index, shipped.catalog, 0);
   const at = now();
   const deadline = at + BUDGET_MS;
   const fetch = (url, options) => {
@@ -189,7 +185,7 @@ export async function sync(arg, deps) {
     const index = await firstJson(fetch, INDEX_URLS, INDEX_MAX_BYTES, validIndex);
     if (index) {
       const catalog = (await firstJson(fetch, CATALOG_URLS, CATALOG_MAX_BYTES, validCatalog)) ?? shipped.catalog;
-      return full(index, catalog, at, state);
+      return full(index, catalog, at);
     }
   }
   return delta(fetch, state, Number.isFinite(arg.since) ? arg.since : 0, at, outOfBudget);

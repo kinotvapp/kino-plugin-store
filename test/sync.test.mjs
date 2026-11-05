@@ -82,6 +82,35 @@ test("a day later it is today's index, full", async () => {
   assert.ok(!calls.some((u) => u.startsWith(SEARCH)), "no search on an index day");
 });
 
+test("after a full read the next search starts at the index's own generatedAt: a repo pushed before the read is not lost", async () => {
+  // The index was built at T0 + 1 h and read at T0 + 7 h (the hourly build can lag for hours); a repo pushed at T0 + 3 h is in
+  // neither the index nor a search that starts at the read time.
+  const built = T0 + 3600_000;
+  const readAt = T0 + 7 * 3600_000;
+  const { fetch: readFetch } = fakeFetch({
+    [RAW_INDEX]: { body: { schema: 1, generatedAt: built, entries: [] } },
+    [RAW_CATALOG]: { body: { schema: 1, plugins: [] } },
+  });
+  const state0 = { indexGeneratedAt: T0, indexReadAt: 0, recommended: [] };
+  const first = await sync({ reason: "reload", since: readAt - 60_000, state: state0 }, { fetch: readFetch, now: () => readAt, shipped });
+  assert.equal(first.full, true);
+  assert.equal(first.state.indexGeneratedAt, built);
+  assert.equal(first.state.deltaFrom, built, "the cursor restarts at the index, not at the read time");
+
+  const pushed = new Date(T0 + 3 * 3600_000).toISOString();
+  const { fetch, calls } = fakeFetch({
+    [SEARCH]: { body: { items: [{ full_name: "kinotvapp/kino-plugin-mega", name: "kino-plugin-mega", owner: { login: "kinotvapp" }, fork: false, stargazers_count: 0, pushed_at: pushed }] } },
+    "https://raw.githubusercontent.com/kinotvapp/kino-plugin-mega/HEAD/kino-plugin.json": { body: {
+      id: "mega", name: "Mega", version: "0.1.0", description: "Catalog", author: "kinotvapp", icon: "icon.png", capabilities: ["home", "browse"],
+    } },
+  });
+  const later = readAt + 2 * 60_000;
+  const second = await sync({ reason: "reload", since: readAt, state: first.state }, { fetch, now: () => later, shipped });
+  const q = new URL(calls.find((u) => u.startsWith(SEARCH))).searchParams.get("q");
+  assert.equal(q, `topic:kino-plugin fork:false pushed:>${new Date(built - OVERLAP_MS).toISOString().replace(/\.\d{3}Z$/, "Z")}`);
+  assert.deepEqual(second.entries.map((e) => e.id), ["mega"]);
+});
+
 test("between days it asks pushed:> with the 10-minute overlap and returns a delta", async () => {
   const now = T0 + 5 * 3600_000;
   const since = T0 + 4 * 3600_000;
