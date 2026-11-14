@@ -20,6 +20,7 @@ build again.
 src/
   plugin.js     entry: the storeSync export Kino calls, with kino.fetch, the clock and the shipped lists
   sync.js       storeSync: shipped list, hourly index.json, or a pushed:> delta with its cursor in state
+  reliability.js  reliability.json ratings -> popularity (the store's order), freshness and the compact copy kept in state
   entries.js    StoreEntry objects from a kino-plugin.json, from catalog.json and from index.json; categories as Kino derives them
   stremio-names.js  the names of the recommended Stremio addons catalog.json leaves unnamed (as their manifests give them)
 index.json      the list shipped with this version: { "schema": 1, "generatedAt": <ms>, "entries": [StoreEntry...] }
@@ -30,8 +31,9 @@ catalog.json    Kino's curated catalog (the same file as the app's assets/plugin
 
 1. **First call** (no `state` yet): the shipped `index.json` and `catalog.json`, `full: true`, with no network at all, so the
    store is full on a first start offline. Catalog entries are marked `recommended` (Kino honours that only from this store).
-2. **Once an hour**: the latest `index.json` from `kinotvapp/kino-plugins` (raw.githubusercontent.com, then jsDelivr), built hourly
-   by a GitHub Action, plus `catalog.json`; `full: true`. That re-read drops repos that lost the `kino-plugin` topic or were
+2. **Once an hour**: the latest `index.json` from `kinotvapp/kino-plugins` (raw.githubusercontent.com, then jsDelivr), which the
+   project rebuilds every few minutes and publishes only when its entries change, plus `catalog.json` and `reliability.json`
+   (see "Ordering by reliability"); `full: true`. That re-read drops repos that lost the `kino-plugin` topic or were
    deleted, and refreshes the stars. If it cannot be read, the sync falls back to the delta and tries again next time.
 3. **Between index days**: one search,
    `q=topic:kino-plugin fork:false pushed:>{window start}&sort=updated&order=asc&per_page=100`, then each new repo's
@@ -42,8 +44,38 @@ catalog.json    Kino's curated catalog (the same file as the app's assets/plugin
    - `deltaAfter`: set when a busy day had more new repos than one sync reads; the next sync starts one second before the
      last repo read, so nothing is lost.
 
-`state` also keeps `indexGeneratedAt`, `indexReadAt` and the recommended addresses (a delta never overwrites a recommended
-row), well under Kino's 16 KB. GitHub allows 10 unauthenticated searches a minute: this store makes one per sync.
+`state` also keeps `indexGeneratedAt`, `indexReadAt`, the recommended addresses (a delta never overwrites a recommended
+row) and `rel` (the ratings below, compact), well under Kino's 16 KB. GitHub allows 10 unauthenticated searches a minute: this
+store makes one per sync.
+
+## Ordering by reliability
+
+Kino lists the store by `popularity`, descending. Until 1.0.8 that was a repository's stars; now the most reliable plugins come
+first. `reliability.json` (schema 1, next to `index.json` in `kinotvapp/kino-plugins`) rates each plugin 0 to 100 from how many of
+its users hit failures in the last 7 days, and this store turns the rating into `popularity`:
+
+```text
+popularity = round(score * 10) * 1000 + min(stars, 999)
+```
+
+- The score decides the order; the stars only break ties (they are capped, so they can never outweigh a score step).
+- A plugin with no rating (new, too few users, or region-locked) counts as `NEUTRAL_SCORE` (55): in the middle, neither buried
+  nor above the proven ones. With no ratings at all the order is the stars, as before.
+- The ratings are optional and never a reason to fail a sync. If `reliability.json` cannot be read, the ratings kept in `state`
+  stay while they are fresh; one older than 14 days (`STALE_MS`) is ignored and the order falls back to the stars.
+- A `delta` ranks its new rows with the ratings kept in `state`, so a plugin that was just pushed does not drop to the neutral
+  score until the next full read.
+
+```json
+{ "schema": 1, "generatedAt": 1794690000000, "windowDays": 7, "minUsers": 5,
+  "plugins": [ { "id": "kino-social", "score": 99.3, "grade": "A", "confidence": "alta", "active_users": 8830,
+                 "trend": { "direction": "estable", "delta": 0.3 }, "top_failures": [] },
+               { "id": "some-new-one", "score": null, "grade": "sin_datos" } ] }
+```
+
+The score is the lower bound of the share of healthy users (Wilson interval), by user and not by event, so a single device in a
+loop cannot sink a plugin and a plugin with few users cannot rank high by luck. Only `id` and `score` are read here
+(`src/reliability.js`, tested in `test/reliability.test.mjs`).
 
 ## Build, validate, try
 
