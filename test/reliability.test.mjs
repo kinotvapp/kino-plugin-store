@@ -117,3 +117,53 @@ test("a delta ranks the new rows with the ratings kept in state", async () => {
   assert.equal(r.entries[0].popularity, 880004);
   assert.deepEqual(r.state.rel, state.rel, "the ratings survive the delta");
 });
+
+// ---- rank + prior (1.0.9) ----
+
+test("the file's `rank` wins over its `score`, and an older file with only `score` still works", () => {
+  const { s } = scoresOf(rel([{ id: "new", score: 99, rank: 80 }, { id: "old", score: 70 }]));
+  assert.deepEqual(s, { new: 80, old: 70 });
+});
+
+test("an unrated plugin counts as the file's prior, not the built-in neutral", () => {
+  const doc = { ...rel([{ id: "a", score: 90, rank: 90 }]), prior: 69.8 };
+  const r = scoresOf(doc);
+  assert.equal(r.p, 69.8);
+  const [a, none] = rank([entry("a", 0), entry("zzz", 0)], r);
+  assert.equal(a.popularity, 900000);
+  assert.equal(none.popularity, 698000, "no value for it: the prior");
+  assert.equal(popularityOf(0, undefined, 69.8), 698000);
+});
+
+test("values equal to the prior are not stored: they are the default", () => {
+  const { s, p } = scoresOf({ ...rel([{ id: "flat", rank: 69.8 }, { id: "up", rank: 90 }]), prior: 69.8 });
+  assert.equal(p, 69.8);
+  assert.deepEqual(s, { up: 90 });
+});
+
+test("a bad prior is ignored and the built-in neutral applies", () => {
+  for (const prior of [-1, 101, NaN, "70", null]) {
+    const r = scoresOf({ ...rel([{ id: "a", rank: 90 }]), prior });
+    assert.equal(r.p, undefined);
+    assert.equal(rank([entry("x", 0)], r)[0].popularity, NEUTRAL_SCORE * 10 * 1000);
+  }
+});
+
+test("a many-plugin file with a prior fits the state budget", () => {
+  const plugins = Array.from({ length: 600 }, (_, i) => ({ id: `some-plugin-${i}`, rank: 40 + (i % 50) }));
+  const r = scoresOf({ ...rel(plugins), prior: 69.8 });
+  assert.ok(JSON.stringify(r).length <= STATE_MAX_CHARS + 300);
+});
+
+test("the sync ranks by `rank` with the prior as neutral for plugins the file leaves out", async () => {
+  const now = T0 + 1000;
+  const index = { schema: 1, generatedAt: T0, entries: [entry("tiny-clean", 0), entry("big-solid", 0), entry("unlisted", 0)] };
+  const doc = { ...rel([{ id: "tiny-clean", score: 94, rank: 70.5 }, { id: "big-solid", score: 93, rank: 92 }]), prior: 69.8 };
+  const { fetch } = fakeFetch({ [RAW_INDEX]: { body: index }, [RAW_CATALOG]: { body: shipped.catalog }, [RAW_REL]: { body: doc } });
+  const r = await sync(hourly(now), { fetch, now: () => now, shipped });
+  const pop = Object.fromEntries(r.entries.map((e) => [e.id, e.popularity]));
+  assert.ok(pop["big-solid"] > pop["tiny-clean"]);
+  assert.ok(pop["tiny-clean"] > pop.unlisted, "70.5 is above the prior 69.8");
+  assert.equal(pop.unlisted, 698000);
+  assert.equal(r.state.rel.p, 69.8);
+});

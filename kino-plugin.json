@@ -1,7 +1,7 @@
 {
   "id": "kino-plugins",
   "name": "Kino Plugins",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "apiVersion": 15,
   "entry": "plugin.js",
   "icon": "icon.png",
@@ -21,6 +21,6 @@
   },
   "signature": {
     "authorKey": "82b87b938e0a95b142467c815a8823cb54310a13a828c3c4c77b1eda43294ae6",
-    "value": "c892e9b99d6eb584501d84baa28daa9b2ef8efc234ece59de2be4c425b879b4d7de178c2925625fc1b2e9d8905f5e8df51fcdd70c8f9800b9cfa1f15ebbfbb0f"
+    "value": "c0e48d289e7b8a99765135060000dff275850afd58057e0ada3d8fb8c857f9b5b2df9c052a54e7d7f8ffc667dacc02785df53280b5ce07d13f3b5d9e9cd3c70a"
   }
 }

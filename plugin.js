@@ -2109,30 +2109,35 @@ var STATE_MAX_CHARS = 6e3;
 var RELIABILITY_MAX_BYTES = 256 * 1024;
 var ID2 = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 var validReliability = (b) => !!b && b.schema === 1 && Number.isFinite(b.generatedAt) && Array.isArray(b.plugins);
+var inRange = (v) => Number.isFinite(v) && v >= 0 && v <= 100;
 function scoresOf(doc) {
+  const prior = inRange(doc.prior) ? Math.round(doc.prior * 10) / 10 : void 0;
   const s = {};
   let used = 0;
-  const rated = doc.plugins.filter((p) => p && typeof p.id === "string" && ID2.test(p.id) && Number.isFinite(p.score) && p.score >= 0 && p.score <= 100).sort((a, b) => a.id.localeCompare(b.id));
+  const rated = doc.plugins.filter((p) => p && typeof p.id === "string" && ID2.test(p.id) && (inRange(p.rank) || inRange(p.score))).sort((a, b) => a.id.localeCompare(b.id));
   for (const p of rated) {
+    const v = Math.round((inRange(p.rank) ? p.rank : p.score) * 10) / 10;
+    if (prior !== void 0 && v === prior) continue;
     const cost = p.id.length + 8;
     if (used + cost > STATE_MAX_CHARS) break;
-    s[p.id] = Math.round(p.score * 10) / 10;
+    s[p.id] = v;
     used += cost;
   }
-  return { at: doc.generatedAt, s };
+  return { at: doc.generatedAt, ...prior !== void 0 ? { p: prior } : {}, s };
 }
 function freshScores(rel, now) {
   if (!rel || typeof rel !== "object" || !Number.isFinite(rel.at) || !rel.s || typeof rel.s !== "object") return null;
   return now - rel.at <= STALE_MS ? rel : null;
 }
-function popularityOf(stars, score) {
-  const s = Number.isFinite(score) ? Math.min(100, Math.max(0, score)) : NEUTRAL_SCORE;
+function popularityOf(stars, score, neutral = NEUTRAL_SCORE) {
+  const s = Number.isFinite(score) ? Math.min(100, Math.max(0, score)) : neutral;
   const tie = Number.isFinite(stars) ? Math.min(999, Math.max(0, Math.floor(stars))) : 0;
   return Math.round(s * 10) * 1e3 + tie;
 }
 function rank(entries, rel) {
   const scores = rel && rel.s ? rel.s : {};
-  return entries.map((e) => ({ ...e, popularity: popularityOf(e.popularity, Object.hasOwn(scores, e.id) ? scores[e.id] : void 0) }));
+  const neutral = rel && inRange(rel.p) ? rel.p : NEUTRAL_SCORE;
+  return entries.map((e) => ({ ...e, popularity: popularityOf(e.popularity, Object.hasOwn(scores, e.id) ? scores[e.id] : void 0, neutral) }));
 }
 
 // src/sync.js

@@ -55,27 +55,30 @@ first. `reliability.json` (schema 1, next to `index.json` in `kinotvapp/kino-plu
 its users hit failures in the last 7 days, and this store turns the rating into `popularity`:
 
 ```text
-popularity = round(score * 10) * 1000 + min(stars, 999)
+popularity = round(value * 10) * 1000 + min(stars, 999)      value = the file's rank (its score, in an older file)
 ```
 
-- The score decides the order; the stars only break ties (they are capped, so they can never outweigh a score step).
-- A plugin with no rating (new, too few users, or region-locked) counts as `NEUTRAL_SCORE` (55): in the middle, neither buried
-  nor above the proven ones. With no ratings at all the order is the stars, as before.
+- `score` is the measured health; `rank` is what the store orders by: the score shrunk toward the file's `prior` (the median of
+  the plugins with a solid sample) with the weight of `shrinkK` users, so a plugin with 60 users and no failures does not outrank
+  one with thousands of users and a few. A plugin with no data has `rank = prior`. The publisher computes it; this store only reads it.
+- The value decides the order; the stars only break ties (they are capped, so they can never outweigh a step of the value).
+- A plugin the file does not rate counts as the file's `prior` (`NEUTRAL_SCORE`, 55, if the file has none): in the middle, neither
+  buried nor above the proven ones. With no ratings at all the order is the stars, as before.
 - The ratings are optional and never a reason to fail a sync. If `reliability.json` cannot be read, the ratings kept in `state`
   stay while they are fresh; one older than 14 days (`STALE_MS`) is ignored and the order falls back to the stars.
 - A `delta` ranks its new rows with the ratings kept in `state`, so a plugin that was just pushed does not drop to the neutral
   score until the next full read.
 
 ```json
-{ "schema": 1, "generatedAt": 1794690000000, "windowDays": 7, "minUsers": 5,
-  "plugins": [ { "id": "kino-social", "score": 99.3, "grade": "A", "confidence": "alta", "active_users": 8830,
+{ "schema": 1, "generatedAt": 1794690000000, "windowDays": 7, "minUsers": 5, "prior": 69.8, "shrinkK": 100,
+  "plugins": [ { "id": "kino-social", "score": 99.4, "rank": 99.1, "grade": "A", "confidence": "alta", "active_users": 8685,
                  "trend": { "direction": "estable", "delta": 0.3 }, "top_failures": [] },
-               { "id": "some-new-one", "score": null, "grade": "sin_datos" } ] }
+               { "id": "some-new-one", "score": null, "rank": 69.8, "grade": "sin_datos" } ] }
 ```
 
 The score is the lower bound of the share of healthy users (Wilson interval), by user and not by event, so a single device in a
-loop cannot sink a plugin and a plugin with few users cannot rank high by luck. Only `id` and `score` are read here
-(`src/reliability.js`, tested in `test/reliability.test.mjs`).
+loop cannot sink a plugin and a plugin with few users cannot rank high by luck. Only `id`, `rank` (or `score`) and `prior` are
+read here (`src/reliability.js`, tested in `test/reliability.test.mjs`).
 
 ## Build, validate, try
 
