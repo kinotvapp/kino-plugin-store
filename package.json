@@ -7,7 +7,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "check:built": "node scripts/build.mjs --check",
-    "test": "node --test test/sync.test.mjs && node --test test/entries.test.mjs && node --test test/build-index.test.mjs",
+    "test": "node --test test/sync.test.mjs && node --test test/entries.test.mjs && node --test test/build-index.test.mjs && node --test test/reliability.test.mjs",
     "validate": "node sdk/validate.mjs ."
   },
   "devDependencies": {

@@ -10,6 +10,7 @@
 // GitHub allows 10 unauthenticated searches a minute: one per sync. Its refusal (403/429) or any failure answers an empty
 // delta, so Kino keeps the list it has.
 import { STORE_ID, entriesOfCatalog, entryOfManifest, keyOf, mergeFull, recommendedIds, recommendedKeys } from "./entries.js";
+import { RELIABILITY_MAX_BYTES, freshScores, rank, scoresOf, validReliability } from "./reliability.js";
 
 export const DAY_MS = 24 * 3600_000;
 
@@ -37,6 +38,11 @@ const CATALOG_URLS = [
   "https://raw.githubusercontent.com/kinotvapp/kino-plugins/main/catalog.json",
   "https://archive.org/download/kino-app/plugin-catalog.json",
   "https://cdn.jsdelivr.net/gh/kinotvapp/kino-plugins@main/catalog.json",
+];
+/** The per-plugin reliability ratings (schema 1), published next to index.json: they decide the order of the list. */
+const RELIABILITY_URLS = [
+  "https://raw.githubusercontent.com/kinotvapp/kino-plugins/main/reliability.json",
+  "https://cdn.jsdelivr.net/gh/kinotvapp/kino-plugins@main/reliability.json",
 ];
 const SEARCH_URL = "https://api.github.com/search/repositories";
 /** kino.fetch's largest `maxBytes` (contract.json fetch.maxBytes.max): the index and a search page are read up to it. */
@@ -73,12 +79,14 @@ const validCatalog = (b) => b && b.schema === 1 && Array.isArray(b.plugins);
  * before it was read is in neither, and the next searches must find it (a cursor at the read time, or at an older delta, missed it
  * until the next hourly index).
  */
-function full(index, catalog, readAt) {
+function full(index, catalog, readAt, rel = null) {
   const recommended = entriesOfCatalog(catalog);
   return {
     full: true,
-    entries: mergeFull(index.entries, recommended),
+    // Popularity = the reliability ranking (stars only break ties); with no ratings every plugin is neutral, so it is the stars.
+    entries: rank(mergeFull(index.entries, recommended), rel),
     state: {
+      ...(rel ? { rel } : {}),
       indexGeneratedAt: index.generatedAt,
       indexReadAt: readAt,
       recommended: recommendedKeys(recommended),
@@ -161,7 +169,9 @@ async function delta(fetch, state, since, at, outOfBudget) {
   const stateOut = outOfBudget() ? kept : { ...rest, ...cursor };
   // A repo that reuses a recommended id (or the store's own) is an impostor: never in the list, whatever the next index says.
   const taken = new Set([STORE_ID, ...(Array.isArray(state.recommendedIds) ? state.recommendedIds : [])]);
-  return { full: false, entries: entries.filter((e) => e && !taken.has(e.id)), state: stateOut };
+  // The ratings kept in state rank the new rows too: a plugin that was just pushed must not drop to the neutral score for an hour.
+  const rel = freshScores(state.rel, at);
+  return { full: false, entries: rank(entries.filter((e) => e && !taken.has(e.id)), rel), state: stateOut };
 }
 
 /**
@@ -188,7 +198,11 @@ export async function sync(arg, deps) {
     const index = await firstJson(fetch, INDEX_URLS, INDEX_MAX_BYTES, validIndex);
     if (index) {
       const catalog = (await firstJson(fetch, CATALOG_URLS, CATALOG_MAX_BYTES, validCatalog)) ?? shipped.catalog;
-      return full(index, catalog, at);
+      // The ratings are optional: if they cannot be read the ones kept in state stay (while fresh), so the order does not
+      // flip back to stars for an hour. Never a reason to fail the sync.
+      const doc = await firstJson(fetch, RELIABILITY_URLS, RELIABILITY_MAX_BYTES, validReliability);
+      const rel = freshScores(doc ? scoresOf(doc) : null, at) ?? freshScores(state.rel, at);
+      return full(index, catalog, at, rel);
     }
   }
   return delta(fetch, state, Number.isFinite(arg.since) ? arg.since : 0, at, outOfBudget);

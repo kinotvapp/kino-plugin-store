@@ -325,7 +325,7 @@ var catalog_default = {
 };
 
 // index.json
-var kino_plugins_store_default = {
+var kino_plugin_store_default = {
   schema: 1,
   generatedAt: 1793296449481,
   entries: [
@@ -2102,6 +2102,39 @@ function mergeFull(indexEntries, recommended) {
   return oneRepoPerId(out);
 }
 
+// src/reliability.js
+var NEUTRAL_SCORE = 55;
+var STALE_MS = 14 * 24 * 36e5;
+var STATE_MAX_CHARS = 6e3;
+var RELIABILITY_MAX_BYTES = 256 * 1024;
+var ID2 = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+var validReliability = (b) => !!b && b.schema === 1 && Number.isFinite(b.generatedAt) && Array.isArray(b.plugins);
+function scoresOf(doc) {
+  const s = {};
+  let used = 0;
+  const rated = doc.plugins.filter((p) => p && typeof p.id === "string" && ID2.test(p.id) && Number.isFinite(p.score) && p.score >= 0 && p.score <= 100).sort((a, b) => a.id.localeCompare(b.id));
+  for (const p of rated) {
+    const cost = p.id.length + 8;
+    if (used + cost > STATE_MAX_CHARS) break;
+    s[p.id] = Math.round(p.score * 10) / 10;
+    used += cost;
+  }
+  return { at: doc.generatedAt, s };
+}
+function freshScores(rel, now) {
+  if (!rel || typeof rel !== "object" || !Number.isFinite(rel.at) || !rel.s || typeof rel.s !== "object") return null;
+  return now - rel.at <= STALE_MS ? rel : null;
+}
+function popularityOf(stars, score) {
+  const s = Number.isFinite(score) ? Math.min(100, Math.max(0, score)) : NEUTRAL_SCORE;
+  const tie = Number.isFinite(stars) ? Math.min(999, Math.max(0, Math.floor(stars))) : 0;
+  return Math.round(s * 10) * 1e3 + tie;
+}
+function rank(entries, rel) {
+  const scores = rel && rel.s ? rel.s : {};
+  return entries.map((e) => ({ ...e, popularity: popularityOf(e.popularity, Object.hasOwn(scores, e.id) ? scores[e.id] : void 0) }));
+}
+
 // src/sync.js
 var DAY_MS = 24 * 36e5;
 var INDEX_EVERY_MS = 36e5;
@@ -2119,6 +2152,10 @@ var CATALOG_URLS = [
   "https://raw.githubusercontent.com/kinotvapp/kino-plugins/main/catalog.json",
   "https://archive.org/download/kino-app/plugin-catalog.json",
   "https://cdn.jsdelivr.net/gh/kinotvapp/kino-plugins@main/catalog.json"
+];
+var RELIABILITY_URLS = [
+  "https://raw.githubusercontent.com/kinotvapp/kino-plugins/main/reliability.json",
+  "https://cdn.jsdelivr.net/gh/kinotvapp/kino-plugins@main/reliability.json"
 ];
 var SEARCH_URL = "https://api.github.com/search/repositories";
 var INDEX_MAX_BYTES = 2e6;
@@ -2142,12 +2179,14 @@ async function firstJson(fetch, urls, maxBytes, valid) {
 }
 var validIndex = (b) => b && b.schema === 1 && Number.isFinite(b.generatedAt) && Array.isArray(b.entries);
 var validCatalog = (b) => b && b.schema === 1 && Array.isArray(b.plugins);
-function full(index, catalog, readAt) {
+function full(index, catalog, readAt, rel = null) {
   const recommended = entriesOfCatalog(catalog);
   return {
     full: true,
-    entries: mergeFull(index.entries, recommended),
+    // Popularity = the reliability ranking (stars only break ties); with no ratings every plugin is neutral, so it is the stars.
+    entries: rank(mergeFull(index.entries, recommended), rel),
     state: {
+      ...rel ? { rel } : {},
       indexGeneratedAt: index.generatedAt,
       indexReadAt: readAt,
       recommended: recommendedKeys(recommended),
@@ -2200,7 +2239,8 @@ async function delta(fetch, state, since, at, outOfBudget) {
   const cursor = (readCut || pageCut) && last - 1e3 > from ? { deltaAfter: last - 1e3 } : { deltaFrom: at };
   const stateOut = outOfBudget() ? kept : { ...rest, ...cursor };
   const taken = /* @__PURE__ */ new Set([STORE_ID, ...Array.isArray(state.recommendedIds) ? state.recommendedIds : []]);
-  return { full: false, entries: entries.filter((e) => e && !taken.has(e.id)), state: stateOut };
+  const rel = freshScores(state.rel, at);
+  return { full: false, entries: rank(entries.filter((e) => e && !taken.has(e.id)), rel), state: stateOut };
 }
 async function sync(arg, deps) {
   const { now, shipped } = deps;
@@ -2219,7 +2259,9 @@ async function sync(arg, deps) {
     const index = await firstJson(fetch, INDEX_URLS, INDEX_MAX_BYTES, validIndex);
     if (index) {
       const catalog = await firstJson(fetch, CATALOG_URLS, CATALOG_MAX_BYTES, validCatalog) ?? shipped.catalog;
-      return full(index, catalog, at);
+      const doc = await firstJson(fetch, RELIABILITY_URLS, RELIABILITY_MAX_BYTES, validReliability);
+      const rel = freshScores(doc ? scoresOf(doc) : null, at) ?? freshScores(state.rel, at);
+      return full(index, catalog, at, rel);
     }
   }
   return delta(fetch, state, Number.isFinite(arg.since) ? arg.since : 0, at, outOfBudget);
@@ -2227,7 +2269,7 @@ async function sync(arg, deps) {
 
 // src/plugin.js
 async function storeSync(arg) {
-  return sync(arg, { fetch: (url, options) => kino.fetch(url, options), now: () => Date.now(), shipped: { index: kino_plugins_store_default, catalog: catalog_default } });
+  return sync(arg, { fetch: (url, options) => kino.fetch(url, options), now: () => Date.now(), shipped: { index: kino_plugin_store_default, catalog: catalog_default } });
 }
 export {
   storeSync

@@ -59,7 +59,7 @@ test("first sync is the shipped list, full", async () => {
   const byKey = Object.fromEntries(r.entries.map((e) => [e.address ?? e.stremio, e]));
   assert.equal(byKey["kinotvapp/kino-plugin-archive"].recommended, true);
   assert.equal(byKey["kinotvapp/kino-plugin-archive"].description, "Dominio público.", "the catalog's words win for a recommended plugin");
-  assert.equal(byKey["kinotvapp/kino-plugin-archive"].popularity, 40, "the index still brings its stars");
+  assert.equal(byKey["kinotvapp/kino-plugin-archive"].popularity, 550040, "no ratings yet: neutral score, the stars break ties");
   assert.equal(byKey["ana/kino-plugin-pelis"].recommended, undefined);
   assert.equal(byKey["https://subs.example.org/manifest.json"].recommended, true);
   assert.equal(r.entries.length, 3, "the recommended plugin the index also lists is one entry");
@@ -151,7 +151,7 @@ test("between days it asks pushed:> with the 10-minute overlap and returns a del
   assert.deepEqual(r.entries, [{
     address: "carla/kino-plugin-anime", id: "anime", name: "Anime", description: "Anime", categories: ["movies", "series"],
     version: "1.2.0", author: "carla", icon: "https://raw.githubusercontent.com/carla/kino-plugin-anime/HEAD/icon.png",
-    popularity: 7, updatedAt: since + 1000, signed: true, authorKey: "a".repeat(64),
+    popularity: 550007, updatedAt: since + 1000, signed: true, authorKey: "a".repeat(64),
   }], "a recommended repo keeps the row the catalog gave it");
   assert.deepEqual(r.state, { ...synced(now), deltaFrom: now }, "the next window starts where this one ended");
 });
