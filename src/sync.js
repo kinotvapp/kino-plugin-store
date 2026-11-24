@@ -10,6 +10,7 @@
 // GitHub allows 10 unauthenticated searches a minute: one per sync. Its refusal (403/429) or any failure answers an empty
 // delta, so Kino keeps the list it has.
 import { STORE_ID, entriesOfCatalog, entryOfManifest, keyOf, mergeFull, recommendedIds, recommendedKeys } from "./entries.js";
+import { PINS_MAX_BYTES, applyPins, holdPinned, keptPins, pinnedPopularity, pinsOf, validPins } from "./pins.js";
 import { RELIABILITY_MAX_BYTES, freshScores, rank, scoresOf, validReliability } from "./reliability.js";
 
 export const DAY_MS = 24 * 3600_000;
@@ -43,6 +44,11 @@ const CATALOG_URLS = [
 const RELIABILITY_URLS = [
   "https://raw.githubusercontent.com/kinotvapp/kino-plugins/main/reliability.json",
   "https://cdn.jsdelivr.net/gh/kinotvapp/kino-plugins@main/reliability.json",
+];
+/** The owner's pinned positions (schema 1, see pins.js), published next to index.json: applied after the ranking. */
+const PINS_URLS = [
+  "https://raw.githubusercontent.com/kinotvapp/kino-plugins/main/store-pins.json",
+  "https://cdn.jsdelivr.net/gh/kinotvapp/kino-plugins@main/store-pins.json",
 ];
 const SEARCH_URL = "https://api.github.com/search/repositories";
 /** kino.fetch's largest `maxBytes` (contract.json fetch.maxBytes.max): the index and a search page are read up to it. */
@@ -79,14 +85,18 @@ const validCatalog = (b) => b && b.schema === 1 && Array.isArray(b.plugins);
  * before it was read is in neither, and the next searches must find it (a cursor at the read time, or at an older delta, missed it
  * until the next hourly index).
  */
-function full(index, catalog, readAt, rel = null) {
+function full(index, catalog, readAt, rel = null, pins = null) {
   const recommended = entriesOfCatalog(catalog);
+  // Popularity = the reliability ranking (stars only break ties); with no ratings every plugin is neutral, so it is the stars.
+  // Then the owner's pins lift their plugins up to their positions.
+  const entries = applyPins(rank(mergeFull(index.entries, recommended), rel), pins);
+  const pinned = pinnedPopularity(entries, pins);
   return {
     full: true,
-    // Popularity = the reliability ranking (stars only break ties); with no ratings every plugin is neutral, so it is the stars.
-    entries: rank(mergeFull(index.entries, recommended), rel),
+    entries,
     state: {
       ...(rel ? { rel } : {}),
+      ...(pins && pins.length ? { pins, pinned } : {}),
       indexGeneratedAt: index.generatedAt,
       indexReadAt: readAt,
       recommended: recommendedKeys(recommended),
@@ -171,7 +181,9 @@ async function delta(fetch, state, since, at, outOfBudget) {
   const taken = new Set([STORE_ID, ...(Array.isArray(state.recommendedIds) ? state.recommendedIds : [])]);
   // The ratings kept in state rank the new rows too: a plugin that was just pushed must not drop to the neutral score for an hour.
   const rel = freshScores(state.rel, at);
-  return { full: false, entries: rank(entries.filter((e) => e && !taken.has(e.id)), rel), state: stateOut };
+  // A pinned plugin that was just pushed keeps the place the last full list pinned it at, not its bare ranking.
+  const ranked = holdPinned(rank(entries.filter((e) => e && !taken.has(e.id)), rel), state.pinned);
+  return { full: false, entries: ranked, state: stateOut };
 }
 
 /**
@@ -202,7 +214,10 @@ export async function sync(arg, deps) {
       // flip back to stars for an hour. Never a reason to fail the sync.
       const doc = await firstJson(fetch, RELIABILITY_URLS, RELIABILITY_MAX_BYTES, validReliability);
       const rel = freshScores(doc ? scoresOf(doc) : null, at) ?? freshScores(state.rel, at);
-      return full(index, catalog, at, rel);
+      // The pins are optional too: unreadable, the ones kept in state stay; a published empty list removes them.
+      const pinsDoc = await firstJson(fetch, PINS_URLS, PINS_MAX_BYTES, validPins);
+      const pins = pinsDoc ? pinsOf(pinsDoc) : keptPins(state.pins);
+      return full(index, catalog, at, rel, pins);
     }
   }
   return delta(fetch, state, Number.isFinite(arg.since) ? arg.since : 0, at, outOfBudget);

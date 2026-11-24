@@ -21,6 +21,7 @@ src/
   plugin.js     entry: the storeSync export Kino calls, with kino.fetch, the clock and the shipped lists
   sync.js       storeSync: shipped list, hourly index.json, or a pushed:> delta with its cursor in state
   reliability.js  reliability.json ratings -> popularity (the store's order), freshness and the compact copy kept in state
+  pins.js       store-pins.json: the owner's pinned positions, applied after the ranking
   entries.js    StoreEntry objects from a kino-plugin.json, from catalog.json and from index.json; categories as Kino derives them
   stremio-names.js  the names of the recommended Stremio addons catalog.json leaves unnamed (as their manifests give them)
 index.json      the list shipped with this version: { "schema": 1, "generatedAt": <ms>, "entries": [StoreEntry...] }
@@ -79,6 +80,28 @@ popularity = round(value * 10) * 1000 + min(stars, 999)      value = the file's 
 The score is the lower bound of the share of healthy users (Wilson interval), by user and not by event, so a single device in a
 loop cannot sink a plugin and a plugin with few users cannot rank high by luck. Only `id`, `rank` (or `score`) and `prior` are
 read here (`src/reliability.js`, tested in `test/reliability.test.mjs`).
+
+## Pinned positions
+
+Since 1.0.10 the owner can keep a plugin within the first places of the list without a new store version. `store-pins.json`
+(schema 1, next to `index.json` in `kinotvapp/kino-plugins`, read on the same full reads as `reliability.json`, from raw then jsDelivr,
+at most 16 KB):
+
+```json
+{ "schema": 1, "pins": [ { "address": "owner/repo", "id": "plugin-id", "maxPosition": 3 } ] }
+```
+
+- After the reliability ranking, a pinned plugin that sits lower than `maxPosition` (1 to 50) moves up to it, with a popularity just
+  above the plugin it passes; one that already ranks higher stays where it is. A pin only lifts, never lowers.
+- A pin matches by `address` (any case) and, when it names one, by `id` too, so a repo that merely reuses an id never takes the place.
+  A pin whose plugin is not in the list is ignored; at most 10 pins are read.
+- Several pins keep their relative order: a later one never passes an earlier one.
+- Positions count within the plugin's own tab: recommended rows ("De Kino") apart from the rest ("De la comunidad"). Every view
+  Kino orders by popularity shows a subset in the same order (a category, a search, with blocked or 18+ rows hidden), so the
+  pin holds there too, at the same place or higher. The "recent" sort does not use popularity and is not pinned.
+- Optional, like the ratings: if the file cannot be read the pins kept in `state` stay; with none, the order is the ranking alone. To
+  remove every pin publish `{ "schema": 1, "pins": [] }`. A `delta` keeps a pinned plugin that was just pushed at the popularity
+  the last full read pinned it at (`state.pinned`), so it does not drop until the next full read.
 
 ## Build, validate, try
 

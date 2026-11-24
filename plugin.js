@@ -2102,19 +2102,93 @@ function mergeFull(indexEntries, recommended) {
   return oneRepoPerId(out);
 }
 
+// src/pins.js
+var PINS_MAX_BYTES = 16 * 1024;
+var MAX_PINS = 10;
+var MAX_POSITION = 50;
+var REPO2 = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/;
+var ID2 = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+var validPins = (b) => !!b && b.schema === 1 && Array.isArray(b.pins);
+function pinsOf(doc) {
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const p of doc.pins) {
+    if (out.length >= MAX_PINS) break;
+    if (!p || typeof p !== "object" || typeof p.address !== "string" || !REPO2.test(p.address)) continue;
+    if (p.address.split("/").some((s) => s === "." || s === "..")) continue;
+    if (!Number.isInteger(p.maxPosition) || p.maxPosition < 1 || p.maxPosition > MAX_POSITION) continue;
+    if (p.id !== void 0 && (typeof p.id !== "string" || !ID2.test(p.id))) continue;
+    const a = p.address.toLowerCase();
+    if (seen.has(a)) continue;
+    seen.add(a);
+    out.push({ a, ...p.id !== void 0 ? { i: p.id } : {}, m: p.maxPosition });
+  }
+  return out;
+}
+function keptPins(pins) {
+  if (!Array.isArray(pins)) return null;
+  const ok = pins.every((p) => p && typeof p.a === "string" && Number.isInteger(p.m) && p.m >= 1 && (p.i === void 0 || typeof p.i === "string"));
+  return ok ? pins : null;
+}
+var keyOf2 = (e) => String(e.address ?? e.stremio ?? e.id).toLowerCase();
+var nameOf = (e) => String(e.name ?? "").toLowerCase();
+var kinoOrder = (x, y) => y.popularity - x.popularity || (nameOf(x) < nameOf(y) ? -1 : nameOf(x) > nameOf(y) ? 1 : 0) || (keyOf2(x) < keyOf2(y) ? -1 : keyOf2(x) > keyOf2(y) ? 1 : 0);
+var matches = (pin, e) => typeof e.address === "string" && e.address.toLowerCase() === pin.a && (pin.i === void 0 || e.id === pin.i);
+function pinTab(list, pins) {
+  const found = [];
+  for (const pin of pins) {
+    const at = list.findIndex((e) => matches(pin, e));
+    if (at >= 0) found.push({ pin, at });
+  }
+  found.sort((x, y) => x.at - y.at);
+  let placed = -1;
+  found.forEach(({ pin }, k) => {
+    const at = list.findIndex((e) => matches(pin, e));
+    const target = Math.min(at, Math.max(pin.m - 1, placed + 1));
+    if (target < at) {
+      const [moved] = list.splice(at, 1);
+      const passed = list[target];
+      list.splice(target, 0, { ...moved, popularity: Math.floor(passed.popularity) + 0.5 / (k + 1) });
+    }
+    placed = list.findIndex((e) => matches(pin, e));
+  });
+  return list;
+}
+function applyPins(entries, pins) {
+  if (!pins || pins.length === 0) return entries;
+  const featured = pinTab(entries.filter((e) => e.recommended === true).sort(kinoOrder), pins);
+  const community = pinTab(entries.filter((e) => e.recommended !== true).sort(kinoOrder), pins);
+  const byKey = new Map([...featured, ...community].map((e) => [keyOf2(e), e]));
+  return entries.map((e) => byKey.get(keyOf2(e)) ?? e);
+}
+function pinnedPopularity(entries, pins) {
+  const out = {};
+  if (!pins) return out;
+  for (const e of entries) if (pins.some((p) => matches(p, e))) out[e.address.toLowerCase()] = e.popularity;
+  return out;
+}
+function holdPinned(entries, held) {
+  if (!held || typeof held !== "object") return entries;
+  return entries.map((e) => {
+    const k = typeof e.address === "string" ? e.address.toLowerCase() : null;
+    const v = k && Object.hasOwn(held, k) ? held[k] : void 0;
+    return Number.isFinite(v) && v > e.popularity ? { ...e, popularity: v } : e;
+  });
+}
+
 // src/reliability.js
 var NEUTRAL_SCORE = 55;
 var STALE_MS = 14 * 24 * 36e5;
 var STATE_MAX_CHARS = 6e3;
 var RELIABILITY_MAX_BYTES = 256 * 1024;
-var ID2 = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+var ID3 = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 var validReliability = (b) => !!b && b.schema === 1 && Number.isFinite(b.generatedAt) && Array.isArray(b.plugins);
 var inRange = (v) => Number.isFinite(v) && v >= 0 && v <= 100;
 function scoresOf(doc) {
   const prior = inRange(doc.prior) ? Math.round(doc.prior * 10) / 10 : void 0;
   const s = {};
   let used = 0;
-  const rated = doc.plugins.filter((p) => p && typeof p.id === "string" && ID2.test(p.id) && (inRange(p.rank) || inRange(p.score))).sort((a, b) => a.id.localeCompare(b.id));
+  const rated = doc.plugins.filter((p) => p && typeof p.id === "string" && ID3.test(p.id) && (inRange(p.rank) || inRange(p.score))).sort((a, b) => a.id.localeCompare(b.id));
   for (const p of rated) {
     const v = Math.round((inRange(p.rank) ? p.rank : p.score) * 10) / 10;
     if (prior !== void 0 && v === prior) continue;
@@ -2162,6 +2236,10 @@ var RELIABILITY_URLS = [
   "https://raw.githubusercontent.com/kinotvapp/kino-plugins/main/reliability.json",
   "https://cdn.jsdelivr.net/gh/kinotvapp/kino-plugins@main/reliability.json"
 ];
+var PINS_URLS = [
+  "https://raw.githubusercontent.com/kinotvapp/kino-plugins/main/store-pins.json",
+  "https://cdn.jsdelivr.net/gh/kinotvapp/kino-plugins@main/store-pins.json"
+];
 var SEARCH_URL = "https://api.github.com/search/repositories";
 var INDEX_MAX_BYTES = 2e6;
 var CATALOG_MAX_BYTES = 64 * 1024;
@@ -2184,14 +2262,16 @@ async function firstJson(fetch, urls, maxBytes, valid) {
 }
 var validIndex = (b) => b && b.schema === 1 && Number.isFinite(b.generatedAt) && Array.isArray(b.entries);
 var validCatalog = (b) => b && b.schema === 1 && Array.isArray(b.plugins);
-function full(index, catalog, readAt, rel = null) {
+function full(index, catalog, readAt, rel = null, pins = null) {
   const recommended = entriesOfCatalog(catalog);
+  const entries = applyPins(rank(mergeFull(index.entries, recommended), rel), pins);
+  const pinned = pinnedPopularity(entries, pins);
   return {
     full: true,
-    // Popularity = the reliability ranking (stars only break ties); with no ratings every plugin is neutral, so it is the stars.
-    entries: rank(mergeFull(index.entries, recommended), rel),
+    entries,
     state: {
       ...rel ? { rel } : {},
+      ...pins && pins.length ? { pins, pinned } : {},
       indexGeneratedAt: index.generatedAt,
       indexReadAt: readAt,
       recommended: recommendedKeys(recommended),
@@ -2245,7 +2325,8 @@ async function delta(fetch, state, since, at, outOfBudget) {
   const stateOut = outOfBudget() ? kept : { ...rest, ...cursor };
   const taken = /* @__PURE__ */ new Set([STORE_ID, ...Array.isArray(state.recommendedIds) ? state.recommendedIds : []]);
   const rel = freshScores(state.rel, at);
-  return { full: false, entries: rank(entries.filter((e) => e && !taken.has(e.id)), rel), state: stateOut };
+  const ranked = holdPinned(rank(entries.filter((e) => e && !taken.has(e.id)), rel), state.pinned);
+  return { full: false, entries: ranked, state: stateOut };
 }
 async function sync(arg, deps) {
   const { now, shipped } = deps;
@@ -2266,7 +2347,9 @@ async function sync(arg, deps) {
       const catalog = await firstJson(fetch, CATALOG_URLS, CATALOG_MAX_BYTES, validCatalog) ?? shipped.catalog;
       const doc = await firstJson(fetch, RELIABILITY_URLS, RELIABILITY_MAX_BYTES, validReliability);
       const rel = freshScores(doc ? scoresOf(doc) : null, at) ?? freshScores(state.rel, at);
-      return full(index, catalog, at, rel);
+      const pinsDoc = await firstJson(fetch, PINS_URLS, PINS_MAX_BYTES, validPins);
+      const pins = pinsDoc ? pinsOf(pinsDoc) : keptPins(state.pins);
+      return full(index, catalog, at, rel, pins);
     }
   }
   return delta(fetch, state, Number.isFinite(arg.since) ? arg.since : 0, at, outOfBudget);
